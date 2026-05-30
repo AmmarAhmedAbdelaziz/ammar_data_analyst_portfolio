@@ -357,6 +357,26 @@ select option{background:var(--bg2)}
     <div><h1>⚙️ Dashboard</h1><p>Welcome back, Ammar 👋</p></div>
     <button class="btn-logout" onclick="logout()">🚪 Logout</button>
   </div>
+
+    <!-- SUPABASE SETUP BANNER -->
+    <div id="supabase-banner" style="display:none;background:linear-gradient(135deg,rgba(124,108,255,0.15),rgba(255,108,157,0.1));border:1px solid rgba(124,108,255,0.4);border-radius:16px;padding:1.2rem 1.5rem;margin-bottom:1.5rem;max-width:1200px;margin-left:auto;margin-right:auto;margin-top:1rem">
+      <div style="display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+        <div style="font-size:2rem">⚠️</div>
+        <div style="flex:1">
+          <p style="font-weight:700;margin-bottom:.4rem;color:var(--text)">Connect Supabase to save your changes permanently</p>
+          <p style="font-size:.83rem;color:var(--text2);line-height:1.7;margin-bottom:.8rem">Currently your edits are saved locally in this browser only. To make changes permanent and visible to all visitors, follow these steps:</p>
+          <ol style="font-size:.82rem;color:var(--text2);line-height:2;padding-left:1.2rem">
+            <li>Go to <a href="https://supabase.com" target="_blank" style="color:var(--accent)">supabase.com</a> → Create a free account → New Project</li>
+            <li>In your project go to <strong style="color:var(--text)">Table Editor</strong> → New Table → Name it <code style="background:var(--bg3);padding:.1rem .4rem;border-radius:4px;color:var(--accent3)">portfolio_state</code></li>
+            <li>Add 2 columns: <code style="background:var(--bg3);padding:.1rem .4rem;border-radius:4px;color:var(--accent3)">id</code> (text, primary key) and <code style="background:var(--bg3);padding:.1rem .4rem;border-radius:4px;color:var(--accent3)">data</code> (jsonb)</li>
+            <li>Go to <strong style="color:var(--text)">Settings → API</strong> → copy your <strong style="color:var(--text)">Project URL</strong> and <strong style="color:var(--text)">anon public key</strong></li>
+            <li>Open your <code style="background:var(--bg3);padding:.1rem .4rem;border-radius:4px;color:var(--accent3)">index.html</code> → find <code style="background:var(--bg3);padding:.1rem .4rem;border-radius:4px;color:var(--accent3)">YOUR_SUPABASE_URL</code> and <code style="background:var(--bg3);padding:.1rem .4rem;border-radius:4px;color:var(--accent3)">YOUR_SUPABASE_ANON_KEY</code> → replace with your values → re-upload to Netlify</li>
+          </ol>
+          <p style="font-size:.8rem;color:var(--accent3);margin-top:.5rem">✅ Free tier is more than enough — no credit card needed.</p>
+        </div>
+      </div>
+    </div>
+
   <div class="dash-tabs">
     <button class="dash-tab active" onclick="switchTab('t-projects')">🚀 Projects</button>
     <button class="dash-tab" onclick="switchTab('t-about')">👤 About</button>
@@ -553,8 +573,12 @@ select option{background:var(--bg2)}
 
 <script>
 const PW_KEY='ammar_pw_v2';
-const STATE_KEY='ammar_state_v2';
 const PHOTO_KEY='ammar_photo_v2';
+
+// ── SUPABASE CONFIG ── paste your URL and anon key here ──
+const SUPABASE_URL = 'https://hapjsihygljfwyipetwn.supabase.co';
+const SUPABASE_ANON  = 'sb_publishable_1nLtjDE57KPBzzy5votAUw_O1f1GcMB';
+const PORTFOLIO_ROW  = 'ammar_portfolio';   // unique key for your data row
 
 let adminPw=localStorage.getItem(PW_KEY)||'ammar2025';
 let loggedIn=false;
@@ -576,11 +600,49 @@ let S={
   ]
 };
 
-function loadState(){
-  const saved=localStorage.getItem(STATE_KEY);
+// ── SUPABASE helpers ──
+async function sbGet(){
+  try{
+    const r=await fetch(`${SUPABASE_URL}/rest/v1/portfolio_state?id=eq.${PORTFOLIO_ROW}&select=data`,{
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON}
+    });
+    if(!r.ok)return null;
+    const rows=await r.json();
+    return rows.length?rows[0].data:null;
+  }catch(e){return null}
+}
+
+async function sbSet(data){
+  try{
+    await fetch(`${SUPABASE_URL}/rest/v1/portfolio_state`,{
+      method:'POST',
+      headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+      body:JSON.stringify({id:PORTFOLIO_ROW,data})
+    });
+  }catch(e){console.warn('Supabase save failed',e)}
+}
+
+async function loadState(){
+  // 1. Try Supabase first
+  if(SUPABASE_URL!=='YOUR_SUPABASE_URL'){
+    const remote=await sbGet();
+    if(remote){
+      try{S=Object.assign({},S,remote);S.projects=remote.projects||S.projects;return;}catch(e){}
+    }
+  }
+  // 2. Fallback to localStorage
+  const saved=localStorage.getItem('ammar_state_v2');
   if(saved){try{const p=JSON.parse(saved);S=Object.assign({},S,p);S.projects=p.projects||S.projects}catch(e){}}
 }
-function saveState(){localStorage.setItem(STATE_KEY,JSON.stringify(S))}
+
+async function saveState(){
+  // Always save to localStorage as backup
+  localStorage.setItem('ammar_state_v2',JSON.stringify(S));
+  // Save to Supabase if configured
+  if(SUPABASE_URL!=='YOUR_SUPABASE_URL'){
+    await sbSet(S);
+  }
+}
 function getPhoto(){return localStorage.getItem(PHOTO_KEY)||DEFAULT_PHOTO}
 
 // PAGE ROUTING
@@ -602,7 +664,7 @@ function openLogin(){
 function closeLogin(){document.getElementById('login-overlay').classList.remove('show')}
 function doLogin(){
   const pw=document.getElementById('pw-input').value;
-  if(pw===adminPw){loggedIn=true;closeLogin();gotoPage('dashboard');loadDashFields();showToast('✅ Welcome back, Ammar!')}
+  if(pw===adminPw){loggedIn=true;closeLogin();gotoPage('dashboard');loadState().then(()=>{loadDashFields();if(SUPABASE_URL==='YOUR_SUPABASE_URL'){const b=document.getElementById('supabase-banner');if(b)b.style.display='block';}});showToast('✅ Welcome back, Ammar!')}
   else{document.getElementById('login-err').textContent='❌ Incorrect password';document.getElementById('pw-input').value='';document.getElementById('pw-input').focus()}
 }
 function logout(){loggedIn=false;gotoPage('portfolio');showToast('👋 Logged out')}
@@ -965,8 +1027,7 @@ function observeReveal(){
 }
 window.addEventListener('scroll',()=>document.getElementById('scrollTop').classList.toggle('show',window.scrollY>400));
 
-loadState();
-renderPortfolio();
+loadState().then(()=>renderPortfolio());
 </script>
 </body>
 </html>
