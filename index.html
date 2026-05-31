@@ -580,7 +580,7 @@ const SUPABASE_URL = 'https://hapjsihygljfwyipetwn.supabase.co';
 const SUPABASE_ANON  = 'sb_publishable_1nLtjDE57KPBzzy5votAUw_O1f1GcMB';
 const PORTFOLIO_ROW  = 'ammar_portfolio';   // unique key for your data row
 
-let adminPw=localStorage.getItem(PW_KEY)||'ammar2025';
+let adminPw='ammar2025'; // will be overwritten by loadPassword()
 let loggedIn=false;
 let editIdx=-1;
 let pendingPhotoB64=null;
@@ -623,16 +623,118 @@ async function sbSet(data){
 }
 
 async function loadState(){
-  // 1. Try Supabase first
+  // 1. Try Supabase first (source of truth)
   if(SUPABASE_URL!=='YOUR_SUPABASE_URL'){
     const remote=await sbGet();
     if(remote){
-      try{S=Object.assign({},S,remote);S.projects=remote.projects||S.projects;return;}catch(e){}
+      try{
+        // Full replace — Supabase is always the master copy
+        if(remote.hero)    S.hero    = remote.hero;
+        if(remote.about)   S.about   = remote.about;
+        if(remote.contact) S.contact = remote.contact;
+        if(remote.projects && Array.isArray(remote.projects)) S.projects = remote.projects;
+        // Sync to localStorage as backup
+        localStorage.setItem('ammar_state_v2', JSON.stringify(S));
+        return;
+      }catch(e){console.warn('Failed to parse Supabase data',e)}
     }
   }
   // 2. Fallback to localStorage
   const saved=localStorage.getItem('ammar_state_v2');
-  if(saved){try{const p=JSON.parse(saved);S=Object.assign({},S,p);S.projects=p.projects||S.projects}catch(e){}}
+  if(saved){
+    try{
+      const p=JSON.parse(saved);
+      if(p.hero)    S.hero    = p.hero;
+      if(p.about)   S.about   = p.about;
+      if(p.contact) S.contact = p.contact;
+      if(p.projects && Array.isArray(p.projects)) S.projects = p.projects;
+    }catch(e){}
+  }
+}
+
+async function loadPhoto(){
+  // Try Supabase first for profile photo
+  if(SUPABASE_URL!=='YOUR_SUPABASE_URL'){
+    try{
+      const r=await fetch(`${SUPABASE_URL}/rest/v1/portfolio_state?id=eq.ammar_photo&select=data`,{
+        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON}
+      });
+      if(r.ok){
+        const rows=await r.json();
+        if(rows.length&&rows[0].data&&rows[0].data.photo){
+          localStorage.setItem(PHOTO_KEY, rows[0].data.photo);
+          return;
+        }
+      }
+    }catch(e){}
+  }
+}
+
+async function savePassword(pw){
+  // Save password to localStorage always
+  localStorage.setItem(PW_KEY, pw);
+  // Save to Supabase if configured
+  if(SUPABASE_URL!=='YOUR_SUPABASE_URL'){
+    try{
+      await fetch(`${SUPABASE_URL}/rest/v1/portfolio_state`,{
+        method:'POST',
+        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+        body:JSON.stringify({id:'ammar_password',data:{pw}})
+      });
+    }catch(e){console.warn('Password save to Supabase failed',e)}
+  }
+}
+
+async function loadPassword(){
+  // Try Supabase first
+  if(SUPABASE_URL!=='YOUR_SUPABASE_URL'){
+    try{
+      const r=await fetch(`${SUPABASE_URL}/rest/v1/portfolio_state?id=eq.ammar_password&select=data`,{
+        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON}
+      });
+      if(r.ok){
+        const rows=await r.json();
+        if(rows.length&&rows[0].data&&rows[0].data.pw){
+          adminPw=rows[0].data.pw;
+          localStorage.setItem(PW_KEY, adminPw);
+          return;
+        }
+      }
+    }catch(e){}
+  }
+  // Fallback to localStorage
+  const saved=localStorage.getItem(PW_KEY);
+  if(saved) adminPw=saved;
+}
+
+
+// ── IMAGE COMPRESSION ──
+// Resizes and compresses a base64 image to stay under ~150KB
+function compressImage(base64, maxSize=800, quality=0.65){
+  return new Promise(resolve=>{
+    if(!base64 || !base64.startsWith('data:image')){resolve(base64||'');return;}
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width, h=img.height;
+      // Scale down if larger than maxSize
+      if(w>maxSize||h>maxSize){
+        if(w>h){h=Math.round(h*maxSize/w);w=maxSize;}
+        else{w=Math.round(w*maxSize/h);h=maxSize;}
+      }
+      const canvas=document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(img,0,0,w,h);
+      resolve(canvas.toDataURL('image/jpeg',quality));
+    };
+    img.onerror=()=>resolve('');
+    img.src=base64;
+  });
+}
+
+// Profile photo: compress to 400px, higher quality
+function compressPhoto(base64){
+  return compressImage(base64, 400, 0.75);
 }
 
 async function saveState(){
@@ -640,7 +742,21 @@ async function saveState(){
   localStorage.setItem('ammar_state_v2',JSON.stringify(S));
   // Save to Supabase if configured
   if(SUPABASE_URL!=='YOUR_SUPABASE_URL'){
-    await sbSet(S);
+    // Compress all images before saving to Supabase
+    const compressedProjects = await Promise.all(S.projects.map(async p=>({
+      ...p,
+      imgs: await Promise.all((p.imgs||[]).map(img=>compressImage(img,800,0.6))),
+      img:  p.imgs&&p.imgs[0] ? await compressImage(p.imgs[0],800,0.6) : ''
+    })));
+    const stateForCloud = {
+      hero:    S.hero,
+      about:   S.about,
+      contact: S.contact,
+      projects: compressedProjects
+    };
+    // Also save compressed version to localStorage
+    localStorage.setItem('ammar_state_v2', JSON.stringify(stateForCloud));
+    await sbSet(stateForCloud);
   }
 }
 function getPhoto(){return localStorage.getItem(PHOTO_KEY)||DEFAULT_PHOTO}
@@ -664,7 +780,7 @@ function openLogin(){
 function closeLogin(){document.getElementById('login-overlay').classList.remove('show')}
 function doLogin(){
   const pw=document.getElementById('pw-input').value;
-  if(pw===adminPw){loggedIn=true;closeLogin();gotoPage('dashboard');loadState().then(()=>{loadDashFields();if(SUPABASE_URL==='YOUR_SUPABASE_URL'){const b=document.getElementById('supabase-banner');if(b)b.style.display='block';}});showToast('✅ Welcome back, Ammar!')}
+  if(pw===adminPw){loggedIn=true;closeLogin();gotoPage('dashboard');Promise.all([loadState(),loadPhoto(),loadPassword()]).then(()=>{loadDashFields();if(SUPABASE_URL==='YOUR_SUPABASE_URL'){const b=document.getElementById('supabase-banner');if(b)b.style.display='block';}});showToast('✅ Welcome back, Ammar!')}
   else{document.getElementById('login-err').textContent='❌ Incorrect password';document.getElementById('pw-input').value='';document.getElementById('pw-input').focus()}
 }
 function logout(){loggedIn=false;gotoPage('portfolio');showToast('👋 Logged out')}
@@ -888,7 +1004,7 @@ function removeProjImg(i){
   renderProjImgsPreviews();
 }
 
-function saveProject(){
+async function saveProject(){
   const p={
     id:editIdx>=0?S.projects[editIdx].id:Date.now(),
     name:document.getElementById('np-name').value||'New Project',
@@ -909,21 +1025,21 @@ function saveProject(){
   editIdx=-1;pendingProjImgB64=null;
 }
 
-function delProj(i){
-  if(confirm('Delete this project?')){S.projects.splice(i,1);saveState();renderDashProj();showToast('🗑️ Deleted');}
+async function delProj(i){
+  if(confirm('Delete this project?')){S.projects.splice(i,1);await saveState();renderDashProj();showToast('🗑️ Deleted');}
 }
 
-function saveAbout(){
+async function saveAbout(){
   S.about={title:document.getElementById('ab-t').value||S.about.title,b1:document.getElementById('ab-b1').value||S.about.b1,b2:document.getElementById('ab-b2').value||S.about.b2,skills:document.getElementById('ab-sk').value||S.about.skills};
-  saveState();showToast('✅ About saved!');
+  await saveState();showToast('✅ About saved!');
 }
-function saveHero(){
+async function saveHero(){
   S.hero={lastname:document.getElementById('hh-ln').value||S.hero.lastname,subtitle:document.getElementById('hh-sub').value||S.hero.subtitle,sp:document.getElementById('hh-sp').value||S.hero.sp,se:document.getElementById('hh-se').value||S.hero.se,sc:document.getElementById('hh-sc').value||S.hero.sc,badge:document.getElementById('hh-badge').value||S.hero.badge};
-  saveState();showToast('✅ Hero saved!');
+  await saveState();showToast('✅ Hero saved!');
 }
-function saveContact(){
+async function saveContact(){
   S.contact={text:document.getElementById('ct-t').value||S.contact.text,email:document.getElementById('ct-em').value||S.contact.email,phone:document.getElementById('ct-ph').value||S.contact.phone,github:document.getElementById('ct-gh').value,linkedin:document.getElementById('ct-li').value,twitter:document.getElementById('ct-tw').value,nafezly:document.getElementById('ct-nf').value,footer:document.getElementById('ct-fo').value||S.contact.footer,extra:[...(S.contact.extra||[])]};
-  saveState();showToast('✅ Contact saved!');
+  await saveState();showToast('✅ Contact saved!');
 }
 
 function previewMyPhoto(input){
@@ -936,22 +1052,37 @@ function previewMyPhoto(input){
   };
   r.readAsDataURL(input.files[0]);
 }
-function saveMyPhoto(){
+async function saveMyPhoto(){
   if(!pendingPhotoB64){showToast('⚠️ Please select a photo first');return}
-  localStorage.setItem(PHOTO_KEY,pendingPhotoB64);
-  showToast('✅ Photo updated!');pendingPhotoB64=null;
+  showToast('⏳ Compressing photo...');
+  const compressed = await compressPhoto(pendingPhotoB64);
+  localStorage.setItem(PHOTO_KEY, compressed);
+  // Also save photo to Supabase via a separate row
+  if(SUPABASE_URL!=='YOUR_SUPABASE_URL'){
+    try{
+      await fetch(`${SUPABASE_URL}/rest/v1/portfolio_state`,{
+        method:'POST',
+        headers:{'apikey':SUPABASE_ANON,'Authorization':'Bearer '+SUPABASE_ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},
+        body:JSON.stringify({id:'ammar_photo',data:{photo:compressed}})
+      });
+    }catch(e){console.warn('Photo save to Supabase failed',e)}
+  }
+  pendingPhotoB64=null;
+  showToast('✅ Photo saved to cloud!');
 }
 
-function changePass(){
+async function changePass(){
   const cur=document.getElementById('sec-cur').value,nw=document.getElementById('sec-new').value,con=document.getElementById('sec-con').value;
   const msg=document.getElementById('sec-msg');
   if(cur!==adminPw){msg.style.color='#ff5a7a';msg.textContent='❌ Incorrect current password';return}
   if(nw.length<6){msg.style.color='#ff5a7a';msg.textContent='❌ Min 6 characters';return}
   if(nw!==con){msg.style.color='#ff5a7a';msg.textContent='❌ Passwords do not match';return}
-  adminPw=nw;localStorage.setItem(PW_KEY,nw);
-  msg.style.color='var(--accent3)';msg.textContent='✅ Password updated!';
+  msg.style.color='var(--text2)';msg.textContent='⏳ Saving password...';
+  adminPw=nw;
+  await savePassword(nw);
+  msg.style.color='var(--accent3)';msg.textContent='✅ Password updated & saved to cloud!';
   ['sec-cur','sec-new','sec-con'].forEach(id=>document.getElementById(id).value='');
-  showToast('🔒 Password changed!');
+  showToast('🔒 Password saved to cloud!');
 }
 
 
@@ -982,7 +1113,7 @@ function updateExtraLink(i,field,val){
   S.contact.extra[i][field]=val;
 }
 
-function addExtraLink(){
+async function addExtraLink(){
   const label=document.getElementById('el-label').value.trim();
   const url=document.getElementById('el-url').value.trim();
   const icon=document.getElementById('el-icon').value.trim()||'🔗';
@@ -992,17 +1123,17 @@ function addExtraLink(){
   document.getElementById('el-label').value='';
   document.getElementById('el-url').value='';
   document.getElementById('el-icon').value='';
-  saveState();
+  await saveState();
   renderExtraLinks();
   showToast('✅ '+label+' added!');
 }
 
-function addPreset(label,urlBase,icon){
+async function addPreset(label,urlBase,icon){
   if(!S.contact.extra)S.contact.extra=[];
   // Check if already exists
   if(S.contact.extra.find(e=>e.label===label)){showToast('⚠️ '+label+' already added');return}
   S.contact.extra.push({label,url:urlBase,icon});
-  saveState();
+  await saveState();
   renderExtraLinks();
   // Pre-fill url field for user to complete
   document.getElementById('el-url').value=urlBase;
@@ -1010,9 +1141,9 @@ function addPreset(label,urlBase,icon){
   showToast('✅ '+label+' added! Edit the URL above.');
 }
 
-function removeExtraLink(i){
+async function removeExtraLink(i){
   S.contact.extra.splice(i,1);
-  saveState();
+  await saveState();
   renderExtraLinks();
   showToast('🗑️ Link removed');
 }
@@ -1027,7 +1158,7 @@ function observeReveal(){
 }
 window.addEventListener('scroll',()=>document.getElementById('scrollTop').classList.toggle('show',window.scrollY>400));
 
-loadState().then(()=>renderPortfolio());
+Promise.all([loadState(), loadPhoto(), loadPassword()]).then(()=>renderPortfolio());
 </script>
 </body>
 </html>
