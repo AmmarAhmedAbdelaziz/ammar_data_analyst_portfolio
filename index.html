@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ammar Ahmed | Data Analyst</title>
+<meta name="description" content="Ammar Ahmed — Data Analyst specializing in Power BI, Python, SQL and turning data into decisions.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230a0a0f'/%3E%3Crect x='8' y='38' width='10' height='18' rx='3' fill='%237c6cff'/%3E%3Crect x='22' y='26' width='10' height='30' rx='3' fill='%23ff6c9d'/%3E%3Crect x='36' y='16' width='10' height='40' rx='3' fill='%236cffd4'/%3E%3Crect x='50' y='30' width='10' height='26' rx='3' fill='%237c6cff' opacity='.6'/%3E%3Cline x1='6' y1='58' x2='62' y2='58' stroke='%239090b0' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -72,7 +74,7 @@ section{padding:6rem 2rem;max-width:1100px;margin:0 auto}
 .skill{background:rgba(124,108,255,0.1);border:1px solid rgba(124,108,255,0.25);color:var(--accent);padding:.35rem 1rem;border-radius:50px;font-size:.78rem;font-weight:500}
 
 /* PROJECTS GRID */
-.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.5rem}
+.proj-grid{display:flex;gap:1.5rem}  /* slider flex — widths set by JS */
 .proj-card{background:var(--card);border:1px solid var(--border);border-radius:20px;overflow:hidden;transition:.4s;cursor:pointer}
 .proj-card:hover{transform:translateY(-8px);border-color:rgba(124,108,255,0.5);box-shadow:0 20px 60px rgba(124,108,255,0.12)}
 .proj-thumb{height:190px;display:flex;align-items:center;justify-content:center;font-size:3rem;position:relative;overflow:hidden;background:#1a1a2e}
@@ -222,6 +224,31 @@ select option{background:var(--bg2)}
 .add-link-row{display:grid;grid-template-columns:60px 1fr 1fr auto;gap:.6rem;align-items:end;background:var(--card);border:1px solid rgba(124,108,255,0.2);border-radius:14px;padding:1rem}
 @media(max-width:600px){.add-link-row{grid-template-columns:1fr 1fr}}
 
+
+/* ── PROJECTS SLIDER ── */
+.projects-slider-wrap{position:relative;overflow:hidden}
+.proj-slider{display:flex;gap:1.5rem;transition:transform .5s cubic-bezier(.4,0,.2,1);will-change:transform}
+.proj-slider .proj-card{flex:0 0 calc(33.333% - 1rem);min-width:0}
+@media(max-width:900px){.proj-slider .proj-card{flex:0 0 calc(50% - .75rem)}}
+@media(max-width:580px){.proj-slider .proj-card{flex:0 0 100%}}
+
+/* Slider controls */
+.slider-controls{display:flex;align-items:center;justify-content:center;gap:1.5rem;margin-top:2rem}
+.slider-arrow{background:var(--card);border:1px solid var(--border);color:var(--text);width:44px;height:44px;border-radius:50%;cursor:pointer;font-size:1.1rem;display:flex;align-items:center;justify-content:center;transition:.3s;flex-shrink:0}
+.slider-arrow:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:rgba(124,108,255,0.08);transform:scale(1.1)}
+.slider-arrow:disabled{opacity:.3;cursor:not-allowed}
+.slider-dots{display:flex;gap:.5rem;align-items:center}
+.slider-dot{width:8px;height:8px;border-radius:50%;background:var(--border);border:none;cursor:pointer;transition:.3s;padding:0}
+.slider-dot.active{background:var(--accent);transform:scale(1.3)}
+.slider-dot:hover:not(.active){background:var(--text2)}
+.slider-counter{font-size:.8rem;color:var(--text2);min-width:50px;text-align:center}
+
+/* Fade edges */
+.projects-slider-wrap::before,
+.projects-slider-wrap::after{content:'';position:absolute;top:0;bottom:0;width:40px;z-index:2;pointer-events:none}
+.projects-slider-wrap::before{left:0;background:linear-gradient(to right,var(--bg),transparent)}
+.projects-slider-wrap::after{right:0;background:linear-gradient(to left,var(--bg),transparent)}
+
 #toast{position:fixed;bottom:2rem;right:2rem;background:var(--bg2);border:1px solid var(--accent);color:var(--text);padding:.9rem 1.5rem;border-radius:12px;font-size:.88rem;z-index:9999;transform:translateY(120px);opacity:0;transition:.4s;pointer-events:none;max-width:300px}
 #toast.show{transform:translateY(0);opacity:1}
 .reveal{opacity:0;transform:translateY(28px);transition:.7s ease}
@@ -294,7 +321,15 @@ select option{background:var(--bg2)}
     <div class="reveal">
       <div class="sec-tag">My Work</div>
       <h2 class="sec-title">Featured <em>Projects</em></h2>
-      <div class="proj-grid" id="proj-grid"></div>
+      <div class="projects-slider-wrap">
+        <div class="proj-slider" id="proj-grid"></div>
+      </div>
+      <div class="slider-controls" id="slider-controls" style="display:none">
+        <button class="slider-arrow" id="slide-prev" onclick="slideProjects(-1)" disabled>‹</button>
+        <div class="slider-dots" id="slider-dots"></div>
+        <span class="slider-counter" id="slider-counter"></span>
+        <button class="slider-arrow" id="slide-next" onclick="slideProjects(1)">›</button>
+      </div>
     </div>
   </section>
 
@@ -898,6 +933,8 @@ function renderPortfolio(){
   document.getElementById('footer-txt').textContent=S.contact.footer;
   animNum('s-proj',S.projects.length);
   observeReveal();
+  // Init slider after DOM updates
+  setTimeout(initSlider, 50);
 }
 
 function animNum(id,target){
@@ -1147,6 +1184,113 @@ async function removeExtraLink(i){
   renderExtraLinks();
   showToast('🗑️ Link removed');
 }
+
+
+// ── PROJECTS SLIDER ──
+let sliderIdx = 0;
+let slidesPerView = 3;
+
+function getSlidesPerView(){
+  const w = window.innerWidth;
+  if(w <= 580) return 1;
+  if(w <= 900) return 2;
+  return 3;
+}
+
+function initSlider(){
+  const cards = document.querySelectorAll('#proj-grid .proj-card');
+  const total = cards.length;
+  slidesPerView = getSlidesPerView();
+  const controls = document.getElementById('slider-controls');
+
+  if(total === 0){ if(controls) controls.style.display='none'; return; }
+
+  // Show controls only if more cards than visible
+  if(total > slidesPerView){
+    if(controls) controls.style.display='flex';
+    buildDots(total);
+  } else {
+    if(controls) controls.style.display='none';
+  }
+  sliderIdx = 0;
+  updateSlider();
+}
+
+function buildDots(total){
+  const dotsEl = document.getElementById('slider-dots');
+  if(!dotsEl) return;
+  const pages = Math.ceil(total / slidesPerView);
+  dotsEl.innerHTML = Array.from({length:pages},(_,i)=>
+    `<button class="slider-dot${i===0?' active':''}" onclick="goToSlide(${i})"></button>`
+  ).join('');
+}
+
+function goToSlide(page){
+  const cards = document.querySelectorAll('#proj-grid .proj-card');
+  slidesPerView = getSlidesPerView();
+  const maxPage = Math.ceil(cards.length / slidesPerView) - 1;
+  sliderIdx = Math.max(0, Math.min(page * slidesPerView, cards.length - slidesPerView));
+  updateSlider();
+}
+
+function slideProjects(dir){
+  const cards = document.querySelectorAll('#proj-grid .proj-card');
+  slidesPerView = getSlidesPerView();
+  sliderIdx = Math.max(0, Math.min(sliderIdx + dir, cards.length - slidesPerView));
+  updateSlider();
+}
+
+function updateSlider(){
+  const grid = document.getElementById('proj-grid');
+  const cards = document.querySelectorAll('#proj-grid .proj-card');
+  const total = cards.length;
+  if(!grid || total === 0) return;
+
+  slidesPerView = getSlidesPerView();
+
+  // Calculate card width including gap
+  const gap = 24; // 1.5rem
+  const containerW = grid.parentElement.offsetWidth;
+  const cardW = (containerW - gap * (slidesPerView - 1)) / slidesPerView;
+
+  // Apply widths to cards
+  cards.forEach(c => { c.style.flex = `0 0 ${cardW}px`; c.style.maxWidth = `${cardW}px`; });
+
+  // Move slider
+  const offset = sliderIdx * (cardW + gap);
+  grid.style.transform = `translateX(-${offset}px)`;
+
+  // Update arrows
+  const prev = document.getElementById('slide-prev');
+  const next = document.getElementById('slide-next');
+  if(prev) prev.disabled = sliderIdx <= 0;
+  if(next) next.disabled = sliderIdx >= total - slidesPerView;
+
+  // Update dots
+  const currentPage = Math.floor(sliderIdx / slidesPerView);
+  document.querySelectorAll('.slider-dot').forEach((d,i) => d.classList.toggle('active', i === currentPage));
+
+  // Update counter
+  const counter = document.getElementById('slider-counter');
+  if(counter) counter.textContent = `${Math.min(sliderIdx + slidesPerView, total)} / ${total}`;
+}
+
+// Touch/swipe support
+let touchStartX = 0;
+document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, {passive:true});
+document.addEventListener('touchend', e => {
+  const diff = touchStartX - e.changedTouches[0].clientX;
+  if(Math.abs(diff) > 50){
+    slideProjects(diff > 0 ? 1 : -1);
+  }
+}, {passive:true});
+
+// Re-init on resize
+window.addEventListener('resize', ()=>{
+  slidesPerView = getSlidesPerView();
+  buildDots(document.querySelectorAll('#proj-grid .proj-card').length);
+  updateSlider();
+});
 
 function showToast(msg){
   const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
