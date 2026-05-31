@@ -233,21 +233,17 @@ select option{background:var(--bg2)}
 @media(max-width:580px){.proj-slider .proj-card{flex:0 0 100%}}
 
 /* Slider controls */
-.slider-controls{display:flex;align-items:center;justify-content:center;gap:1.5rem;margin-top:2rem}
-.slider-arrow{background:var(--card);border:1px solid var(--border);color:var(--text);width:44px;height:44px;border-radius:50%;cursor:pointer;font-size:1.1rem;display:flex;align-items:center;justify-content:center;transition:.3s;flex-shrink:0}
-.slider-arrow:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:rgba(124,108,255,0.08);transform:scale(1.1)}
-.slider-arrow:disabled{opacity:.3;cursor:not-allowed}
+.slider-controls{display:flex;align-items:center;justify-content:center;gap:1.5rem;margin-top:2.5rem;min-height:60px}
+.slider-arrow{background:var(--card);border:1px solid rgba(124,108,255,0.4);color:var(--text);width:50px;height:50px;border-radius:50%;cursor:pointer;font-size:1.4rem;display:flex;align-items:center;justify-content:center;transition:.3s;flex-shrink:0;font-weight:700;box-shadow:0 4px 20px rgba(0,0,0,0.3)}
+.slider-arrow:hover:not(:disabled){border-color:var(--accent);color:var(--accent);background:rgba(124,108,255,0.12);transform:scale(1.1);box-shadow:0 4px 20px var(--glow)}
+.slider-arrow:disabled{opacity:.25;cursor:not-allowed;border-color:var(--border)}
 .slider-dots{display:flex;gap:.5rem;align-items:center}
 .slider-dot{width:8px;height:8px;border-radius:50%;background:var(--border);border:none;cursor:pointer;transition:.3s;padding:0}
 .slider-dot.active{background:var(--accent);transform:scale(1.3)}
 .slider-dot:hover:not(.active){background:var(--text2)}
 .slider-counter{font-size:.8rem;color:var(--text2);min-width:50px;text-align:center}
 
-/* Fade edges */
-.projects-slider-wrap::before,
-.projects-slider-wrap::after{content:'';position:absolute;top:0;bottom:0;width:40px;z-index:2;pointer-events:none}
-.projects-slider-wrap::before{left:0;background:linear-gradient(to right,var(--bg),transparent)}
-.projects-slider-wrap::after{right:0;background:linear-gradient(to left,var(--bg),transparent)}
+/* No fade edges — clean look */
 
 #toast{position:fixed;bottom:2rem;right:2rem;background:var(--bg2);border:1px solid var(--accent);color:var(--text);padding:.9rem 1.5rem;border-radius:12px;font-size:.88rem;z-index:9999;transform:translateY(120px);opacity:0;transition:.4s;pointer-events:none;max-width:300px}
 #toast.show{transform:translateY(0);opacity:1}
@@ -829,7 +825,7 @@ let currentLightboxIdx=0;
 function openProject(idx){
   const p=S.projects[idx];
   document.getElementById('pd-name').textContent=p.name;
-  document.getElementById('pd-desc').textContent=p.desc;
+  document.getElementById('pd-desc').textContent=p.desc.replace(/^#{1,6}\s+/gm,'').replace(/\*\*(.*?)\*\*/g,'$1').replace(/\*(.*?)\*/g,'$1').trim();
   document.getElementById('pd-tags').innerHTML=p.tags.map(t=>`<span class="proj-tag">${t}</span>`).join('');
   let lnks='';
   if(p.live)lnks+=`<a class="pdl-live" href="${p.live}" target="_blank">🌐 Live Demo</a>`;
@@ -914,7 +910,7 @@ function renderPortfolio(){
       <div class="proj-body">
         <div class="proj-tags">${p.tags.map(t=>`<span class="proj-tag">${t}</span>`).join('')}</div>
         <div class="proj-name">${p.name}</div>
-        <div class="proj-desc">${p.desc.split('\n')[0]}</div>
+        <div class="proj-desc">${p.desc.split('\n')[0].replace(/^#+\s*/,'').replace(/\*\*(.*?)\*\*/g,'$1').replace(/\*(.*?)\*/g,'$1')}</div>
       </div>
     </div>`).join('');
   document.getElementById('ct-text-d').textContent=S.contact.text;
@@ -934,7 +930,8 @@ function renderPortfolio(){
   animNum('s-proj',S.projects.length);
   observeReveal();
   // Init slider after DOM updates
-  setTimeout(initSlider, 50);
+  // Wait for DOM paint before measuring card widths
+  requestAnimationFrame(()=>{ setTimeout(initSlider, 100); });
 }
 
 function animNum(id,target){
@@ -1251,6 +1248,7 @@ function updateSlider(){
   // Calculate card width including gap
   const gap = 24; // 1.5rem
   const containerW = grid.parentElement.offsetWidth;
+  if(containerW === 0){ setTimeout(updateSlider, 100); return; } // not painted yet
   const cardW = (containerW - gap * (slidesPerView - 1)) / slidesPerView;
 
   // Apply widths to cards
@@ -1296,6 +1294,8 @@ function showToast(msg){
   const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),3000);
 }
+window.addEventListener('load', ()=>{ setTimeout(initSlider, 200); });
+
 function observeReveal(){
   const ob=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting){x.target.classList.add('vis');ob.unobserve(x.target)}}),{threshold:.1});
   document.querySelectorAll('.reveal:not(.vis)').forEach(el=>ob.observe(el));
